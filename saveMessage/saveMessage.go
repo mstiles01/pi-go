@@ -1,19 +1,21 @@
 package saveMessage
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"io"
 	"net/http"
+	"time"
 )
 
 type Message struct {
 	Message []string `json:"message"`
 }
 
-func SaveMessage(c *gin.Context) {
+func SaveMessage(c *gin.Context, client *mongo.Client) {
 	var message Message
 
 	body, err := io.ReadAll(c.Request.Body)
@@ -32,23 +34,18 @@ func SaveMessage(c *gin.Context) {
 		return
 	}
 
-	db, err := sql.Open("sqlite3", "/path/to/your/database/file.db")
+	// Save to MongoDB
+	collection := client.Database("splitflap").Collection("message")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = collection.InsertOne(ctx, bson.M{"message": message.Message})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to connect to the database",
+			"error": "Failed to save message to database",
 		})
 		return
-	}
-	defer db.Close()
-
-	for _, char := range message.Message {
-		_, err := db.Exec("INSERT INTO message (character) VALUES (?)", char)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to insert into the database",
-			})
-			return
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
